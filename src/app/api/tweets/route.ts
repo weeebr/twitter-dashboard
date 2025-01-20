@@ -2,6 +2,49 @@ import { NextResponse } from "next/server";
 
 const CACHE_DURATION = 60000; // 1 minute
 let cache = { data: null, timestamp: 0 };
+let currentTokenIndex = 0;
+
+function getBearerTokens() {
+  return [process.env.TWITTER_BEARER_TOKEN_1].filter(Boolean);
+}
+
+async function fetchWithTokenRotation(url: string, options: RequestInit) {
+  const tokens = getBearerTokens();
+  if (tokens.length === 0) {
+    throw new Error("No Twitter tokens available");
+  }
+
+  for (let i = 0; i < tokens.length; i++) {
+    console.log(currentTokenIndex);
+    const token = tokens[currentTokenIndex];
+    try {
+      const res = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (res.status === 429) {
+        // Rate limit exceeded
+        currentTokenIndex = (currentTokenIndex + 1) % tokens.length;
+        continue;
+      }
+
+      return res;
+    } catch (error) {
+      console.error(
+        `Token rotation error (token ${currentTokenIndex}):`,
+        error
+      );
+      currentTokenIndex = (currentTokenIndex + 1) % tokens.length;
+      continue;
+    }
+  }
+
+  throw new Error("All tokens rate limited");
+}
 
 export async function GET() {
   try {
@@ -10,11 +53,7 @@ export async function GET() {
       return NextResponse.json(cache.data);
     }
 
-    if (!process.env.TWITTER_BEARER_TOKEN) {
-      throw new Error("Twitter token missing");
-    }
-
-    const res = await fetch(
+    const res = await fetchWithTokenRotation(
       "https://api.twitter.com/2/users/44196397/tweets?" +
         new URLSearchParams({
           max_results: "5",
@@ -22,11 +61,7 @@ export async function GET() {
           expansions: "referenced_tweets.id",
           "user.fields": "name,username",
         }),
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.TWITTER_BEARER_TOKEN}`,
-        },
-      }
+      {}
     );
 
     const data = await res.json();
