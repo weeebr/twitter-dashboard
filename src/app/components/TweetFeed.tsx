@@ -27,7 +27,21 @@ interface Tweet {
 }
 
 interface TwitterResponse {
-  data?: Tweet[];
+  tweets: Tweet[];
+  includes?: {
+    users?: {
+      id: string;
+      name: string;
+      username: string;
+      profile_image_url?: string;
+    }[];
+    media?: {
+      media_key: string;
+      type: string;
+      url?: string;
+      preview_image_url?: string;
+    }[];
+  };
   error?: string;
 }
 
@@ -232,13 +246,16 @@ export default function TweetFeed() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  console.log(`<fff> tweets`, tweets);
+
   useEffect(() => {
     async function fetchTweets() {
       try {
         // Check cache first
         const cached = cache.get<TwitterResponse>();
-        if (cached?.data?.data?.length) {
-          setTweets(cached.data.data);
+        console.log(`<fff> cached`, cached);
+        if (cached?.data?.tweets?.length) {
+          setTweets(cached.data.tweets);
           setLoading(false);
           return;
         }
@@ -247,12 +264,11 @@ export default function TweetFeed() {
         const res = await fetch("/api/tweets");
         const data: TwitterResponse = await res.json();
 
-        if (!res.ok) throw new Error(data.error);
-        if (!data.data?.length) throw new Error("No tweets available");
-
-        // Update cache and state
-        cache.set<TwitterResponse>(data);
-        setTweets(data.data);
+        if (data.tweets?.length) {
+          // Update cache and state
+          cache.set<TwitterResponse>(data);
+          setTweets(data.tweets);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load tweets");
         console.error("Tweet fetch error:", err);
